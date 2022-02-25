@@ -34,6 +34,7 @@ from compiler_gym.wrappers.commandline import (
 from compiler_gym.wrappers.core import (
     ActionWrapper,
     CompilerEnvWrapper,
+    ConversionWrapperEnv,
     ObservationWrapper,
     RewardWrapper,
 )
@@ -43,7 +44,9 @@ from compiler_gym.wrappers.datasets import (
     IterateOverBenchmarks,
     RandomOrderBenchmarks,
 )
-from compiler_gym.wrappers.llvm import RuntimePointEstimateReward
+
+# TODO(kyleherndon): LLVM-ENV
+# from compiler_gym.wrappers.llvm import RuntimePointEstimateReward
 from compiler_gym.wrappers.time_limit import TimeLimit
 
 from .validation import ValidateBenchmarkAfterEveryStep
@@ -53,13 +56,14 @@ __all__ = [
     "CommandlineWithTerminalAction",
     "CompilerEnvWrapper",
     "ConstrainedCommandline",
+    "ConversionWrapperEnv",
     "CycleOverBenchmarks",
     "CycleOverBenchmarksIterator",
     "IterateOverBenchmarks",
     "ObservationWrapper",
     "RandomOrderBenchmarks",
     "RewardWrapper",
-    "RuntimePointEstimateReward",
+    # "RuntimePointEstimateReward",
     "TimeLimit",
     "ValidateBenchmarkAfterEveryStep",
 ]

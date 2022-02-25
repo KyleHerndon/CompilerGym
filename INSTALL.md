@@ -168,3 +168,10 @@ Additional optional configuration arguments:
     -DCMAKE_C_COMPILER_LAUNCHER=ccache
     -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
     ```
+
+# Contribution
+To install the git pre-commit hooks, in the repository directory run
+
+    ```bash
+    pre-commit install
+    ```

@@ -3,6 +3,8 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+if(LLVM_ENVIRONMENT)
+
 cg_add_all_subdirs()
 
 cg_genrule(
@@ -235,3 +237,5 @@ cg_genrule(
     ::make_llvm_module
   PUBLIC
 )
+
+endif()

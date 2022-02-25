@@ -98,7 +98,7 @@ class ObservationSpaceSpec:
         return cls(
             id=proto.name,
             index=index,
-            space=ObservationSpaceSpec.message_converter(proto.space),
+            space=ObservationSpaceSpec.message_converter(proto),
             translate=ObservationSpaceSpec.message_converter,
             to_string=str,
             deterministic=proto.deterministic,

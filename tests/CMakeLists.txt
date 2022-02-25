@@ -5,6 +5,7 @@
 
 cg_add_all_subdirs()
 
+if(LLVM_ENVIRONMENT)
 cg_py_test(
   NAME
     compiler_env_test
@@ -16,6 +17,7 @@ cg_py_test(
     tests::pytest_plugins::llvm
     tests::test_main
 )
+endif()
 
 cg_py_test(
   NAME
@@ -28,6 +30,7 @@ cg_py_test(
     tests::test_main
 )
 
+if(LLVM_ENVIRONMENT)
 cg_py_test(
   NAME
     env_copy_test
@@ -38,6 +41,7 @@ cg_py_test(
     tests::pytest_plugins::llvm
     tests::test_main
 )
+endif()
 
 cg_py_test(
   NAME
@@ -49,6 +53,7 @@ cg_py_test(
     tests::test_main
 )
 
+if(LLVM_ENVIRONMENT)
 cg_py_test(
   NAME
     random_search_test
@@ -61,6 +66,7 @@ cg_py_test(
     tests::pytest_plugins::common
     tests::test_main
 )
+endif()
 
 cg_py_library(
   NAME

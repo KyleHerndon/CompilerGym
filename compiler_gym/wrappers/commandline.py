@@ -5,6 +5,8 @@
 from collections.abc import Iterable as IterableType
 from typing import Dict, Iterable, List, Optional, Union
 
+from gym import Space
+
 from compiler_gym.envs import CompilerEnv
 from compiler_gym.spaces import Commandline, CommandlineFlag
 from compiler_gym.util.gym_type_hints import StepType
@@ -38,23 +40,7 @@ class CommandlineWithTerminalAction(CompilerEnvWrapper):
                 f"Unsupported action space: {type(env.action_space).__name__}"
             )
 
-        # Redefine the action space, inserting the terminal action at the start.
-        self.action_space = Commandline(
-            items=[terminal]
-            + [
-                CommandlineFlag(
-                    name=name,
-                    flag=flag,
-                    description=description,
-                )
-                for name, flag, description in zip(
-                    env.action_space.names,
-                    env.action_space.flags,
-                    env.action_space.descriptions,
-                )
-            ],
-            name=f"{type(self).__name__}<{env.action_space.name}>",
-        )
+        self.terminal = terminal
 
     def step(self, action: int) -> StepType:
         if isinstance(action, int):
@@ -75,6 +61,26 @@ class CommandlineWithTerminalAction(CompilerEnvWrapper):
             info["terminal_action"] = True
 
         return observation, reward, done, info
+
+    @property
+    def action_space(self) -> Space:
+        # Redefine the action space, inserting the terminal action at the start.
+        return Commandline(
+            items=[self.terminal]
+            + [
+                CommandlineFlag(
+                    name=name,
+                    flag=flag,
+                    description=description,
+                )
+                for name, flag, description in zip(
+                    self.env.action_space.names,
+                    self.env.action_space.flags,
+                    self.env.action_space.descriptions,
+                )
+            ],
+            name=f"{type(self).__name__}<{self.env.action_space.name}>",
+        )
 
 
 class ConstrainedCommandline(ActionWrapper):
@@ -110,18 +116,8 @@ class ConstrainedCommandline(ActionWrapper):
             v: i for i, v in enumerate(self._forward_translation)
         }
 
-        # Redefine the action space using this smaller set of flags.
-        self.action_space = Commandline(
-            items=[
-                CommandlineFlag(
-                    name=env.action_space.names[a],
-                    flag=env.action_space.flags[a],
-                    description=env.action_space.descriptions[a],
-                )
-                for a in (env.action_space.flags.index(f) for f in flags)
-            ],
-            name=f"{type(self).__name__}<{name or env.action_space.name}, {len(flags)}>",
-        )
+        self.flags = flags
+        self.name = name
 
     def action(self, action: Union[int, List[int]]):
         if isinstance(action, IterableType):
@@ -141,4 +137,19 @@ class ConstrainedCommandline(ActionWrapper):
     def fork(self) -> "ConstrainedCommandline":
         return ConstrainedCommandline(
             env=self.env.fork(), flags=self._flags, name=self.action_space.name
+        )
+
+    @property
+    def action_space(self) -> Space:
+        # Redefine the action space using this smaller set of flags.
+        return Commandline(
+            items=[
+                CommandlineFlag(
+                    name=self.env.action_space.names[a],
+                    flag=self.env.action_space.flags[a],
+                    description=self.env.action_space.descriptions[a],
+                )
+                for a in (self.env.action_space.flags.index(f) for f in self.flags)
+            ],
+            name=f"{type(self).__name__}<{self.name or self.env.action_space.name}, {len(self.flags)}>",
         )

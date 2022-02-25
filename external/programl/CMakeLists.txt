@@ -22,6 +22,7 @@ ExternalProject_Add(
     INSTALL_COMMAND ""
 )
 
+if(LLVM_ENVIRONMENT)
 ExternalProject_Add_Step(programl build_programl
   ALWAYS TRUE
   COMMAND
@@ -46,3 +47,6 @@ ExternalProject_Add_Step(programl build_programl
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/programl/src/programl"
   USES_TERMINAL TRUE
 )
+elseif(MLIR_ENVIRONMENT)
+
+endif()

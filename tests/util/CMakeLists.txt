@@ -68,6 +68,7 @@ cg_py_test(
     tests::test_main
 )
 
+if(LLVM_ENVIRONMENT)
 cg_py_test(
   NAME
     minimize_trajectory_test
@@ -78,12 +79,23 @@ cg_py_test(
     tests::pytest_plugins::llvm
     tests::test_main
 )
+endif()
 
 cg_py_test(
   NAME
     parallelization_test
   SRCS
     "parallelization_test.py"
+  DEPS
+    compiler_gym::util::util
+    tests::test_main
+)
+
+cg_py_test(
+  NAME
+    permutation_test
+  SRCS
+    "permutation_test.py"
   DEPS
     compiler_gym::util::util
     tests::test_main

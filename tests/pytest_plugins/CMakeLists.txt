@@ -17,6 +17,7 @@ cg_py_library(
   PUBLIC
 )
 
+if(LLVM_ENVIRONMENT)
 cg_py_library(
   NAME
     llvm
@@ -32,6 +33,21 @@ cg_py_library(
   TESTONLY
   PUBLIC
 )
+endif()
+
+if(MLIR_ENVIRONMENT)
+cg_py_library(
+  NAME
+    mlir
+  SRCS
+    "mlir.py"
+  DEPS
+    compiler_gym::envs::mlir::mlir
+    compiler_gym::util::util
+  TESTONLY
+  PUBLIC
+)
+endif()
 
 cg_py_library(
   NAME

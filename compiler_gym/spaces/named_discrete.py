@@ -2,6 +2,7 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
+from collections import Counter
 from typing import Iterable, List, Union
 
 from compiler_gym.spaces.discrete import Discrete
@@ -72,3 +73,11 @@ class NamedDiscrete(Discrete):
             return self.names.index(values)
         else:
             return [self.names.index(v) for v in values]
+
+    def __eq__(self, other) -> bool:
+        return (
+            isinstance(self, other.__class__)
+            and self.name == other.name
+            and Counter(self.names) == Counter(other.names)
+            and super().__eq__(other)
+        )

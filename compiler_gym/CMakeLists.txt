@@ -10,6 +10,7 @@ cg_add_all_subdirs()
 # therefore creating a circular dependency.
 # compiler_gym_partial is all the other bits of the proto package so that
 # specs.py can import it.
+if (LLVM_ENVIRONMENT)
 cg_py_library(
   NAME
     compiler_gym
@@ -20,6 +21,18 @@ cg_py_library(
     compiler_gym::envs::llvm::specs
   PUBLIC
 )
+elseif(MLIR_ENVIRONMENT)
+cg_py_library(
+  NAME
+    compiler_gym
+  GENERATED_SRCS
+#    "$<TARGET_PROPERTY:compiler_gym__envs__mlir__specs,LOCATION>"
+  DEPS
+    ::compiler_gym_partial
+#    compiler_gym::envs::mlir::specs
+  PUBLIC
+)
+endif()
 
 cg_py_library(
   NAME
@@ -27,8 +40,8 @@ cg_py_library(
   SRCS
     "__init__.py"
   DEPS
-    ::random_replay
-    ::random_search
+#    ::random_replay
+#    ::random_search
     ::validate
     compiler_gym::bin::bin
     compiler_gym::datasets::datasets
@@ -53,6 +66,8 @@ cg_py_library(
   PUBLIC
 )
 
+# TODO(kyleherndon)
+# if(LLVM_ENVIRONMENT)
 cg_py_library(
   NAME
     random_replay
@@ -70,14 +85,15 @@ cg_py_library(
     random_search
   SRCS
     "random_search.py"
-  DATA
-    compiler_gym::envs::llvm::service::service
+  # DATA
+  #   compiler_gym::envs::llvm::service::service
   DEPS
     compiler_gym::envs::envs
     compiler_gym::service::connection
     compiler_gym::util::util
   PUBLIC
 )
+# endif()
 
 cg_py_library(
   NAME
@@ -137,8 +153,8 @@ cg_genrule(
   COMMAND "${_BUILD_CMD}"
   OUTS "${_PY_PKG_OUT_DIR}/dist/${_PY_PGK_FILE_NAME}"
   DEPENDS
-    compiler_gym::third_party::cbench::benchmarks_list
-    compiler_gym::third_party::cbench::crc32
+#    compiler_gym::third_party::cbench::benchmarks_list
+#    compiler_gym::third_party::cbench::crc32
     compiler_gym::compiler_gym
     compiler_gym::bin::bin
     compiler_gym::datasets::datasets

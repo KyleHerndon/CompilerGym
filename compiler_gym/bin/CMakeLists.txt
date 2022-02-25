@@ -5,18 +5,6 @@
 
 cg_add_all_subdirs()
 
-cg_py_library(
-  NAME
-    bin
-  DEPS
-    ::manual_env
-    ::random_replay
-    ::random_search
-    ::service
-    ::validate
-  PUBLIC
-)
-
 cg_py_binary(
   NAME
     manual_env
@@ -28,6 +16,22 @@ cg_py_binary(
     compiler_gym::util::flags::flags
 )
 
+
+set(_BIN_DEPS ::manual_env ::service ::validate)
+if(LLVM_ENVIRONMENT)
+  list(APPEND _BIN_DEPS ::random_replay ::random_search)
+endif()
+
+
+cg_py_library(
+  NAME
+    bin
+  DEPS
+    ${_BIN_DEPS}
+  PUBLIC
+)
+
+if(LLVM_ENVIRONMENT)
 cg_py_binary(
   NAME
     random_eval
@@ -59,6 +63,7 @@ cg_py_binary(
     compiler_gym::util::util
     compiler_gym::util::flags::flags
 )
+endif()
 
 cg_py_binary(
   NAME

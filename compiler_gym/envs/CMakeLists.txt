@@ -5,6 +5,7 @@
 
 cg_add_all_subdirs()
 
+if(LLVM_ENVIRONMENT)
 cg_py_library(
   NAME
     envs
@@ -17,6 +18,20 @@ cg_py_library(
     compiler_gym::envs::loop_tool::loop_tool
   PUBLIC
 )
+elseif(MLIR_ENVIRONMENT)
+cg_py_library(
+  NAME
+    envs
+  SRCS
+    "__init__.py"
+  DEPS
+    ::compiler_env
+    compiler_gym::envs::gcc::gcc
+    compiler_gym::envs::mlir::mlir
+    compiler_gym::envs::loop_tool::loop_tool
+  PUBLIC
+)
+endif()
 
 cg_py_library(
   NAME
@@ -24,6 +39,25 @@ cg_py_library(
   SRCS
     "compiler_env.py"
   DEPS
+    ::env_py
+    compiler_gym::compiler_env_state
+    compiler_gym::datasets::datasets
+    compiler_gym::service::service
+    compiler_gym::service::proto::proto
+    compiler_gym::spaces::spaces
+    compiler_gym::util::util
+    compiler_gym::validation_result
+    compiler_gym::views::views
+  PUBLIC
+)
+
+cg_py_library(
+  NAME
+    env_py
+  SRCS
+    "env.py"
+  DEPS
+    #TODO: prune
     compiler_gym::compiler_env_state
     compiler_gym::datasets::datasets
     compiler_gym::service::service

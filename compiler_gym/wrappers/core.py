@@ -2,18 +2,24 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Iterable, Optional, Union
+from typing import Any, Iterable, Optional, Tuple, Union
 
-import gym
+from gym import Wrapper
+from gym.spaces import Space
 
-from compiler_gym.envs import CompilerEnv
+from compiler_gym.envs import Env
 from compiler_gym.spaces.reward import Reward
-from compiler_gym.util.gym_type_hints import ObservationType, StepType
+from compiler_gym.util.gym_type_hints import (
+    ActionType,
+    ObservationType,
+    RewardType,
+    StepType,
+)
 from compiler_gym.views import ObservationSpaceSpec
 
 
-class CompilerEnvWrapper(gym.Wrapper):
-    """Wraps a :class:`CompilerEnv <compiler_gym.envs.CompilerEnv>` environment
+class CompilerEnvWrapper(Env, Wrapper):
+    """Wraps a :class:`CompilerEnv <compiler_gym.envs.Env>` environment
     to allow a modular transformation.
 
     This class is the base class for all wrappers. This class must be used
@@ -21,7 +27,7 @@ class CompilerEnvWrapper(gym.Wrapper):
     such as the :code:`fork()` method.
     """
 
-    def __init__(self, env: CompilerEnv):
+    def __init__(self, env: Env):
         """Constructor.
 
         :param env: The environment to wrap.
@@ -34,9 +40,6 @@ class CompilerEnvWrapper(gym.Wrapper):
         # CompilerEnv class is a property with a custom setter. Instead we set
         # the observation_space_spec directly.
         self.env = env
-        self.action_space = self.env.action_space
-        self.reward_range = self.env.reward_range
-        self.metadata = self.env.metadata
 
     def step(self, action, observations=None, rewards=None):
         return self.env.step(action, observations=observations, rewards=rewards)
@@ -44,13 +47,20 @@ class CompilerEnvWrapper(gym.Wrapper):
     def reset(self, *args, **kwargs) -> ObservationType:
         return self.env.reset(*args, **kwargs)
 
-    def fork(self) -> CompilerEnv:
+    def fork(self) -> Env:
         return type(self)(env=self.env.fork())
 
     @property
+    def reward_range(self) -> Tuple[float, float]:
+        return self.env.reward_range
+
+    @reward_range.setter
+    def reward_range(self, value: Tuple[float, float]):
+        self.env.reward_range = value
+
+    @property
     def observation_space(self):
-        if self.env.observation_space_spec:
-            return self.env.observation_space_spec.space
+        return self.env.observation_space
 
     @observation_space.setter
     def observation_space(
@@ -75,6 +85,22 @@ class CompilerEnvWrapper(gym.Wrapper):
     @reward_space.setter
     def reward_space(self, reward_space: Optional[Union[str, Reward]]) -> None:
         self.env.reward_space = reward_space
+
+    @property
+    def action_space(self) -> Space:
+        return self.env.action_space
+
+    @action_space.setter
+    def action_space(self, action_space: Optional[str]):
+        self.env.action_space = action_space
+
+    @property
+    def spec(self) -> Any:
+        return self.env.spec
+
+    @spec.setter
+    def spec(self, value: Any):
+        self.env.spec = value
 
 
 class ActionWrapper(CompilerEnvWrapper):
@@ -141,3 +167,64 @@ class RewardWrapper(CompilerEnvWrapper):
     def reward(self, reward):
         """Translate a reward to the new space."""
         raise NotImplementedError
+
+
+class ConversionWrapperEnv(CompilerEnvWrapper):
+    def __init__(self, env: Env):
+        super().__init__(env)
+
+    def convert_action_space(self, space: Space) -> Space:
+        return space
+
+    def convert_action(self, action: ActionType) -> ActionType:
+        return action
+
+    def convert_observation_space(self, space: Space) -> Space:
+        return space
+
+    def convert_observation(self, observation: ObservationType) -> ObservationType:
+        return observation
+
+    def convert_reward_space(self, space: Reward) -> Reward:
+        return space
+
+    def convert_reward(self, reward: RewardType) -> RewardType:
+        return reward
+
+    @property
+    def action_space(self) -> Space:
+        return self.convert_action_space(self.env.action_space)
+
+    @property
+    def reward_space(self) -> Optional[Reward]:
+        return self.convert_reward_space(self.env.reward_space)
+
+    @property
+    def reward_range(self) -> Tuple[float, float]:
+        return (
+            self.convert_reward(self.env.reward_range[0]),
+            self.convert_reward(self.env.reward_range[1]),
+        )
+
+    @property
+    def observation_space(self) -> Optional[Space]:
+        return self.convert_observation_space(self.env.observation_space)
+
+    def reset(self, *args, **kwargs) -> Optional[ObservationType]:
+        return self.convert_observation(self.env.reset(*args, **kwargs))
+
+    def step(
+        self,
+        action: Union[ActionType, Iterable[ActionType]],
+        observations: Optional[Iterable[Union[str, ObservationSpaceSpec]]] = None,
+        rewards: Optional[Iterable[Union[str, Reward]]] = None,
+    ) -> StepType:
+        observation, reward, done, info = self.env.step(
+            self.convert_action(action), observations, rewards
+        )
+        return (
+            self.convert_observation(observation),
+            self.convert_reward(reward),
+            done,
+            info,
+        )

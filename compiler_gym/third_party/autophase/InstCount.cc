@@ -105,10 +105,11 @@ void InstCount::visitBasicBlock(BasicBlock& BB) {
         }
       }
     }
+    // TODO(kyleherndon): LLVM-ENV: function no longer exists in Llvm13
     if (isa<CallInst>(I)) {
-      if (cast<CallInst>(I).getNumArgOperands() > 4) {
-        callLargeNumArgs++;
-      }
+      // if (cast<CallInst>(I).getNumArgOperands() > 4) {
+      //   callLargeNumArgs++;
+      // }
       auto calledFunction = cast<CallInst>(I).getCalledFunction();
       if (calledFunction) {
         auto returnType = calledFunction->getReturnType();

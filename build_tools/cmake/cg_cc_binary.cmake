@@ -57,7 +57,7 @@ function(cg_cc_binary)
     _RULE
     "HOSTONLY;TESTONLY"
     "NAME"
-    "SRCS;COPTS;DEFINES;LINKOPTS;DATA;DEPS;ABS_DEPS;INCLUDES"
+    "SRCS;COPTS;DEFINES;LINKOPTS;DATA;DEPS;ABS_DEPS;NON_LIB_DEPS;INCLUDES"
     ${ARGN}
   )
 
@@ -134,6 +134,11 @@ function(cg_cc_binary)
   )
 
   cg_add_data_dependencies(NAME ${_RULE_NAME} DATA ${_RULE_DATA})
+
+  if(_RULE_NON_LIB_DEPS)
+    rename_bazel_targets(_RULE_NON_LIB_DEPS "${_RULE_NON_LIB_DEPS}")
+    add_dependencies(${_NAME} ${_RULE_NON_LIB_DEPS})
+  endif()
 
   # Add all targets to a folder in the IDE for organization.
   set_target_properties(${_NAME} PROPERTIES

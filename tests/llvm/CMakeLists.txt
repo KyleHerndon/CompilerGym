@@ -3,6 +3,10 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+if (NOT LLVM_ENVIRONMENT)
+  return()
+endif()
+
 cg_add_all_subdirs()
 
 cg_py_test(
