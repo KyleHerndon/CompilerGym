@@ -4,15 +4,17 @@
 # LICENSE file in the root directory of this source tree.
 from concurrent.futures import as_completed
 from pathlib import Path
-from typing import Callable, Iterable, List, NamedTuple, Optional, Union
+from typing import Callable, Iterable, List, Mapping, NamedTuple, Optional, Union
+
+from google.protobuf.any_pb2 import Any
 
 import compiler_gym.errors
 from compiler_gym.datasets.uri import BenchmarkUri
-from compiler_gym.errors import ValidationError
 from compiler_gym.service.proto import Benchmark as BenchmarkProto
 from compiler_gym.service.proto import File
 from compiler_gym.util import thread_pool
 from compiler_gym.util.decorators import memoized_property
+from compiler_gym.validation_error import ValidationError
 
 # A validation callback is a function that takes a single CompilerEnv instance
 # as its argument and returns an iterable sequence of zero or more
@@ -95,7 +97,9 @@ class Benchmark:
     ):
         self._proto = proto
         self._validation_callbacks = validation_callbacks or []
-        self._sources = list(sources or [])
+        if sources:
+            for source in sources:
+                self.proto().files[source.filename] = source.contents
 
     def __repr__(self) -> str:
         return str(self.uri)
@@ -137,11 +141,11 @@ class Benchmark:
 
         .. warning::
 
-            The :meth:`Benchmark.sources
-            <compiler_gym.datasets.Benchmark.sources>` property is new and is
+            The :meth:`Benchmark.proto.files
+            <compiler_gym.datasets.Benchmark.proto.files>` property is new and is
             likely to change in the future.
         """
-        return (BenchmarkSource(*x) for x in self._sources)
+        return (BenchmarkSource(filename=k, contents=v) for k, v in self.proto.files)
 
     def is_validatable(self) -> bool:
         """Whether the benchmark has any validation callbacks registered.
@@ -222,7 +226,7 @@ class Benchmark:
         :param source: The :class:`BenchmarkSource
             <compiler_gym.datasets.BenchmarkSource>` to register.
         """
-        self._sources.append(source)
+        self.proto.files[source.filename] = File(contents=source.contents)
 
     def add_validation_callback(
         self,
@@ -255,7 +259,7 @@ class Benchmark:
         directory = Path(directory)
         directory.mkdir(exist_ok=True, parents=True)
         uniq_paths = set()
-        for filename, contents in self.sources:
+        for filename, contents in self.proto.files:
             path = directory / filename
             uniq_paths.add(path)
             path.parent.mkdir(exist_ok=True, parents=True)
@@ -287,6 +291,24 @@ class Benchmark:
         with open(path, "rb") as f:
             contents = f.read()
         return cls(proto=BenchmarkProto(uri=str(uri), program=File(contents=contents)))
+
+    @classmethod
+    def from_sources(
+        cls,
+        uri: Union[str, BenchmarkUri],
+        sources: Mapping[str, File],
+        features: Mapping[str, Any] = {},
+    ):
+        """Construct a benchmark from sources.
+
+        :param uri: The URI of the benchmark.
+
+        :param files: Files and their sources
+
+        :return: A :class:`Benchmark <compiler_gym.datasets.Benchmark>`
+            instance.
+        """
+        return cls(proto=BenchmarkProto(uri=str(uri), files=sources, features=features))
 
     @classmethod
     def from_file_contents(cls, uri: Union[str, BenchmarkUri], data: bytes):
@@ -349,4 +371,4 @@ class BenchmarkWithSource(Benchmark):
     @property
     def source(self) -> str:
         """Return the single source file contents as a string."""
-        return list(self.sources)[0].contents.decode("utf-8")
+        return list(self.proto.files)[0].decode("utf-8")

@@ -440,7 +440,20 @@ message Benchmark {
   // responsibility of the client to ensure that it provides the correct format.
   // For example, the service could expect that this file contains serialized
   // IR data, or an input source file.
-  File program = 2;
+  File program = 2 [deprecated=true];
+  // The contents of the program that is being compiled, as a mapping from
+  // file name (as a relative path) to file contents. It is up to the
+  // service to determine how to interpret these files, and it is the
+  // responsibility of the client to ensure that it provides the correct format.
+  // For example, the service could expect that the files contain serialized
+  // IR data, or a string of source code.
+  map<string, File> files = 4;
+  // An optional set of named benchmark features. This provides a mechanism
+  // for environments to supplement a benchmark with additional metadata. For
+  // example, this could be used to indicate the name of the "main" file for a
+  // multi-file benchmark, or the name of a particular function that is the
+  // target of the environment.
+  map<string, google.protobuf.Any> features = 5;
   // An optional configuration option that details how to build and run the
   // benchmark program.
   BenchmarkDynamicConfig dynamic_config = 3;
