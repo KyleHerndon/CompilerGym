@@ -133,7 +133,10 @@ Status MlirSession::applyAction(const Event& action, bool& endOfEpisode,
   DCHECK(benchmark_) << "Calling applyAction() before init()";
 
   spaceContainsEventChecker_.checkContains(actionSpaces_[0].space(), action);
-  return mlir::performLinalgCodegen(action, benchmark().module());
+  for (auto& [filename, module] : benchmark().modules()) {
+    RETURN_IF_ERROR(mlir::performLinalgCodegen(action, *module));
+  }
+  return Status::OK;
 }
 
 Status MlirSession::endOfStep(bool actionHadNoEffect, bool& endOfEpisode,

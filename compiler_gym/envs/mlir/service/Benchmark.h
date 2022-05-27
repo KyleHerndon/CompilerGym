@@ -15,7 +15,6 @@
 #include "compiler_gym/util/Subprocess.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/ModuleSummaryIndex.h"
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/LinalgToLLVM/LinalgToLLVM.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
@@ -36,7 +35,6 @@
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
@@ -49,10 +47,6 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
 #include "mlir/Transforms/Passes.h"
-
-namespace mlir {
-class ModuleOp;
-}
 
 namespace compiler_gym::mlir_service {
 
@@ -151,17 +145,18 @@ class RealizedBenchmarkDynamicConfig {
 class Benchmark {
  public:
   /**
-   * Construct a benchmark from a bitcode.
+   * Construct a benchmark from bitcodes.
    */
-  Benchmark(const std::string& name, const Bitcode& bitcode,
+  Benchmark(const std::string& name, const std::map<std::string, Bitcode>& files,
             const BenchmarkDynamicConfig& dynamicConfig,
             const boost::filesystem::path& workingDirectory);
 
   /**
-   * Construct a benchmark from an MLIR module.
+   * Construct a benchmark from MLIR modules.
    */
-  Benchmark(const std::string& name, std::unique_ptr<mlir::MLIRContext> context,
-            std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>> module,
+  Benchmark(const std::string& name, const std::map<std::string, Bitcode>& files,
+            std::map<std::string, std::unique_ptr<mlir::MLIRContext>> contexts,
+            std::map<std::string, std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>>> modules,
             const BenchmarkDynamicConfig& dynamicConfig,
             const boost::filesystem::path& workingDirectory);
 
@@ -224,34 +219,29 @@ class Benchmark {
   /**
    * The underlying MLIR module.
    */
-  inline mlir::OwningOpRef<mlir::ModuleOp>& module() { return *module_; }
+  inline std::map<std::string, std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>>>& modules() {
+    return modules_;
+  }
 
   /**
    * The underlying MLIR module.
    */
-  inline const mlir::OwningOpRef<mlir::ModuleOp>& module() const { return *module_; }
+  inline const std::map<std::string, std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>>>& modules()
+      const {
+    return modules_;
+  }
 
   /**
    * The underlying MLIR context.
    */
-  inline mlir::MLIRContext& context() { return *context_; }
+  inline std::map<std::string, std::unique_ptr<mlir::MLIRContext>>& contexts() { return contexts_; }
 
   /**
    * The underlying MLIR context.
    */
-  inline const mlir::MLIRContext& context() const { return *context_; }
-
-  // Accessors for the underlying raw pointers.
-
-  /**
-   * A pointer to the underlying MLIR context.
-   */
-  inline const mlir::MLIRContext* context_ptr() const { return context_.get(); }
-
-  /**
-   * A pointer to the underlying MLIR module.
-   */
-  inline const mlir::OwningOpRef<mlir::ModuleOp>* module_ptr() const { return module_.get(); }
+  inline const std::map<std::string, std::unique_ptr<mlir::MLIRContext>>& contexts() const {
+    return contexts_;
+  }
 
   /**
    * A reference to the dynamic configuration object.
@@ -270,8 +260,9 @@ class Benchmark {
    *
    * @param module A new module.
    */
-  inline void replaceModule(std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>> module) {
-    module_ = std::move(module);
+  inline void replaceModule(std::string filename,
+                            std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>> module) {
+    modules_[filename] = std::move(module);
     markModuleModified();
   }
 
@@ -303,11 +294,9 @@ class Benchmark {
     return scratchDirectory_.parent_path();
   }
 
-  // NOTE(cummins): Order here is important! The MLIRContext must be declared
-  // before Module, as class members are destroyed in the reverse order they are
-  // declared, and a module must never outlive its context.
-  std::unique_ptr<mlir::MLIRContext> context_;
-  std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>> module_;
+  std::map<std::string, Bitcode> files_;
+  std::map<std::string, std::unique_ptr<mlir::MLIRContext>> contexts_;
+  std::map<std::string, std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>>> modules_;
   /** The directory used for storing build / runtime artifacts. The difference
    * between the scratch directory and the working directory is that the working
    * directory may be shared across multiple Benchmark instances. The scratch
@@ -317,7 +306,6 @@ class Benchmark {
   const BenchmarkDynamicConfig dynamicConfigProto_;
   const RealizedBenchmarkDynamicConfig dynamicConfig_;
   const std::string name_;
-  int m_, n_, k_;
   bool needsRecompile_;
   int64_t buildTimeMicroseconds_;
   int runtimesPerObservationCount_;

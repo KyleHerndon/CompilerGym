@@ -64,5 +64,16 @@ def test_matmul_positive_runtimes(env: MlirEnv, matmul_dataset: MatmulDataset):
     assert np.all(np.greater(val, 0))
 
 
+def test_matmul_ensemble(env: MlirEnv, matmul_dataset: MatmulDataset):
+    benchmark = matmul_dataset.benchmark("generator://matmul-v0/matmul_ensemble")
+    env.reset(benchmark=benchmark)
+    action_space = deepcopy(env.action_space)
+    action_space.seed(123)
+    env.step(action_space.sample())
+    val = env.observation["Runtime"]
+    assert val.size > 1
+    assert np.all(np.greater(val, 0))
+
+
 if __name__ == "__main__":
     main()

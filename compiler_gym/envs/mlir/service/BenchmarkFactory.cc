@@ -6,6 +6,7 @@
 
 #include <fmt/format.h>
 #include <glog/logging.h>
+#include <google/protobuf/wrappers.pb.h>
 
 #include <iostream>
 #include <memory>
@@ -50,47 +51,45 @@ Status BenchmarkFactory::getBenchmark(const BenchmarkProto& benchmarkMessage,
     return Status::OK;
   }
 
+  VLOG(3) << "MLIR benchmark cache miss for: " << benchmarkMessage.uri();
   // Benchmark not cached, cache it and try again.
-  const auto& programFile = benchmarkMessage.program();
-  switch (programFile.data_case()) {
-    case compiler_gym::File::DataCase::kContents: {
-      VLOG(3) << "MLIR benchmark cache miss, add bitcode: " << benchmarkMessage.uri();
-      RETURN_IF_ERROR(
-          addBitcode(benchmarkMessage.uri(),
-                     std::string(programFile.contents().begin(), programFile.contents().end()),
-                     benchmarkMessage.dynamic_config()));
-      break;
-    }
-    case compiler_gym::File::DataCase::kUri: {
-      VLOG(3) << "MLIR benchmark cache miss, read from URI: " << benchmarkMessage.uri();
-      // Check the protocol of the benchmark URI.
-      if (programFile.uri().find("file:///") != 0) {
-        return Status(StatusCode::INVALID_ARGUMENT,
-                      fmt::format("Invalid benchmark data URI. "
-                                  "Only the file:/// protocol is supported: \"{}\"",
-                                  programFile.uri()));
-      }
-
-      const fs::path path(programFile.uri().substr(util::strLen("file:///"), std::string::npos));
-      RETURN_IF_ERROR(addBitcode(benchmarkMessage.uri(), path, benchmarkMessage.dynamic_config()));
-      break;
-    }
-    case compiler_gym::File::DataCase::DATA_NOT_SET:
-      return Status(StatusCode::INVALID_ARGUMENT, fmt::format("No program set in Benchmark:\n{}",
-                                                              benchmarkMessage.DebugString()));
+  std::map<std::string, Bitcode> files;
+  for (auto& [filename, file] : benchmarkMessage.files()) {
+    Bitcode bitcode;
+    RETURN_IF_ERROR(processFile(filename, file, &bitcode));
+    files[filename] = bitcode;
   }
+  // We don't want to make modules out of all the files, so the ones we do are indexed and
+  // pointed to by the features
+  google::protobuf::Int32Value benchmarkTasksSize;
+  benchmarkMessage.features().at("num_tasks").UnpackTo(&benchmarkTasksSize);
+  std::vector<std::string> mlirFilenames;
+  for (int i = 0; i < benchmarkTasksSize.value(); i++) {
+    google::protobuf::StringValue filenameValue;
+    benchmarkMessage.features().at(std::to_string(i)).UnpackTo(&filenameValue);
+    mlirFilenames.push_back(filenameValue.value());
+  }
+
+  RETURN_IF_ERROR(addBenchmark(benchmarkMessage.uri(), files, mlirFilenames,
+                               benchmarkMessage.dynamic_config()));
 
   return getBenchmark(benchmarkMessage, benchmark);
 }
 
-Status BenchmarkFactory::addBitcode(const std::string& uri, const Bitcode& bitcode,
-                                    std::optional<BenchmarkDynamicConfig> dynamicConfig) {
-  auto context = mlir::createMlirContext();
-  Status status;
-  std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>> module =
-      makeModule(*context, bitcode, uri, &status);
-  RETURN_IF_ERROR(status);
-  DCHECK(module);
+Status BenchmarkFactory::addBenchmark(const std::string& uri,
+                                      const std::map<std::string, Bitcode>& files,
+                                      const std::vector<std::string>& mlirFilenames,
+                                      std::optional<BenchmarkDynamicConfig> dynamicConfig) {
+  std::map<std::string, std::unique_ptr<mlir::MLIRContext>> contexts;
+  std::map<std::string, std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>>> modules;
+
+  for (const std::string& filename : mlirFilenames) {
+    const std::string& contents = files.at(filename);
+    contexts[filename] = mlir::createMlirContext();
+    Status status;
+    modules[filename] = makeModule(*contexts[filename], contents, uri, &status);
+    RETURN_IF_ERROR(status);
+  }
 
   if (benchmarks_.size() == maxLoadedBenchmarksCount_) {
     VLOG(2) << "MLIR benchmark cache reached maximum size " << maxLoadedBenchmarksCount_
@@ -107,23 +106,40 @@ Status BenchmarkFactory::addBitcode(const std::string& uri, const Bitcode& bitco
   }
 
   benchmarks_.insert(
-      {uri, Benchmark(uri, std::move(context), std::move(module),
+      {uri, Benchmark(uri, files, std::move(contexts), std::move(modules),
                       (dynamicConfig.has_value() ? *dynamicConfig : BenchmarkDynamicConfig()),
                       workingDirectory_)});
 
   VLOG(2) << "Cached MLIR benchmark: " << uri << ". Cache size = " << benchmarks_.size()
           << " items";
-
   return Status::OK;
 }
 
-Status BenchmarkFactory::addBitcode(const std::string& uri, const fs::path& path,
-                                    std::optional<BenchmarkDynamicConfig> dynamicConfig) {
-  VLOG(2) << "addBitcode(" << path.string() << ")";
+Status BenchmarkFactory::processFile(const std::string filename, const File& file,
+                                     Bitcode* bitcode) {
+  switch (file.data_case()) {
+    case compiler_gym::File::DataCase::kContents: {
+      VLOG(3) << "MLIR benchmark cache miss, add bitcode: " << filename;
+      *bitcode = file.contents();
+      return Status::OK;
+    }
+    case compiler_gym::File::DataCase::kUri: {
+      VLOG(3) << "MLIR benchmark cache miss, read from URI: " << file.uri();
+      // Check the protocol of the benchmark URI.
+      if (file.uri().find("file:///") != 0) {
+        return Status(StatusCode::INVALID_ARGUMENT,
+                      fmt::format("Invalid benchmark data URI. "
+                                  "Only the file:/// protocol is supported: \"{}\"",
+                                  file.uri()));
+      }
 
-  Bitcode bitcode;
-  RETURN_IF_ERROR(readBitcodeFile(path, &bitcode));
-  return addBitcode(uri, bitcode, dynamicConfig);
+      const fs::path path(file.uri().substr(util::strLen("file:///"), std::string::npos));
+      return readBitcodeFile(path, bitcode);
+    }
+    case compiler_gym::File::DataCase::DATA_NOT_SET:
+      return Status(StatusCode::INVALID_ARGUMENT,
+                    fmt::format("No program set in file:\n{}", filename));
+  }
 }
 
 }  // namespace compiler_gym::mlir_service

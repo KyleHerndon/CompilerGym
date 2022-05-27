@@ -83,47 +83,29 @@ RealizedBenchmarkDynamicConfig realizeDynamicConfig(const BenchmarkDynamicConfig
 
   // Set up the environment variables.
   (*command->mutable_env())["CC"] = (llvm_install / "bin/clang").string();
-  // Register the IR as a pre-requisite build file.
-  command->add_infile((scratchDirectory / "out.mlir.ll").string());
-  command->add_infile((scratchDirectory / "benchmark_main.cc").string());
 
   command->mutable_argument()->Clear();
-  command->add_argument("$CC");
-  command->add_argument("-Ofast");
-  command->add_argument((scratchDirectory / "out.mlir.ll").string());
-  command->add_argument("-mllvm");
-  command->add_argument("-enable-matrix");
-  command->add_argument("-mllvm");
-  command->add_argument("-matrix-allow-contract");
-  command->add_argument("-mllvm");
-  command->add_argument("-matrix-default-layout=row-major");
-  command->add_argument("-c");
-  command->add_argument("-o");
-  command->add_argument((scratchDirectory / "benchmark_mlir.o").string());
-  command->add_argument((llvm_install / "lib/libMLIRExecutionEngine.a").string());
-  command->add_argument("-g3");
-  command->add_argument("&&");
-
+  command->add_argument("make");
+  command->add_argument("-s");
+  command->add_argument("LLVM_INSTALL=" + llvm_install.string());
+  command->add_argument("BENCHMARK_INSTALL=" + benchmark_install.string());
+  command->add_argument("CC=" + (llvm_install / "bin/clang").string());
+  command->add_argument("build");
   // TODO(boian): Move out the compilation of the main object file
   // to when the benchmark is initialized.
   // Ideally, the main executable should not need relinking.
   // The MLIR code should be compiled into a shared lib and then dynamically loaded.
   // These optimization should reduce the overhead.
 
-  // Compile and link
-  command->add_argument("$CC");
-  command->add_argument("-o");
-  command->add_argument((scratchDirectory / "benchmark_main").string());
-  command->add_argument("-I" + (llvm_install / "include/").string());
-  command->add_argument("-I" + (benchmark_install / "include/").string());
-  command->add_argument("-lstdc++");
-  command->add_argument("-lm");
-  command->add_argument("-pthread");
-  command->add_argument("-v");
-  command->add_argument("-g3");
-  command->add_argument((scratchDirectory / "benchmark_main.cc").string());
-  command->add_argument((scratchDirectory / "benchmark_mlir.o").string());
-  command->add_argument((benchmark_install / "lib/libbenchmark.a").string());
+  command = cfg.mutable_run_cmd();
+  command->mutable_argument()->Clear();
+  command->add_argument("make");
+  command->add_argument("-s");
+  command->add_argument("LLVM_INSTALL=" + llvm_install.string());
+  command->add_argument("BENCHMARK_INSTALL=" +
+                        benchmark_install.string());  // TODO should only need this for build
+  command->add_argument("CC=" + (llvm_install / "bin/clang").string());
+  command->add_argument("run");
 
   return RealizedBenchmarkDynamicConfig(cfg);
 }
@@ -157,31 +139,10 @@ Status readBitcodeFile(const fs::path& path, Bitcode* bitcode) {
   return Status::OK;
 }
 
-std::vector<int> parametersFromUri(std::string uri) {
-  std::vector<int> ret;
-  std::vector<std::string> tokensSlash;
-  boost::split(tokensSlash, uri, boost::is_any_of("/"));
-  std::vector<std::string> tokensUnderscore;
-  boost::split(tokensUnderscore, tokensSlash[tokensSlash.size() - 1], boost::is_any_of("_"));
-  for (auto i = 0; i < tokensUnderscore.size(); i++) {
-    ret.push_back(std::stoi(tokensUnderscore[i]));
-  }
-  return ret;
-}
-
 std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>> makeModule(mlir::MLIRContext& context,
                                                               const Bitcode& bitcode,
                                                               const std::string& name,
                                                               Status* status) {
-  auto params = parametersFromUri(name);
-  int m, n, k;
-  m = params[0];
-  n = params[1];
-  k = params[2];
-  Bitcode mlirSource = bitcode;
-  boost::replace_all(mlirSource, "${M}", std::to_string(m));
-  boost::replace_all(mlirSource, "${N}", std::to_string(n));
-  boost::replace_all(mlirSource, "${K}", std::to_string(k));
   mlir::OwningOpRef<mlir::ModuleOp> moduleRef = parseSourceString(bitcode, &context);
   if (!moduleRef) {
     *status = Status(StatusCode::INVALID_ARGUMENT,
@@ -199,9 +160,10 @@ std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>> makeModule(mlir::MLIRContext&
 }
 
 // A benchmark is an MLIR module and the MLIR context that owns it.
-Benchmark::Benchmark(const std::string& name, const Bitcode& bitcode,
+Benchmark::Benchmark(const std::string& name, const std::map<std::string, Bitcode>& bitcodes,
                      const BenchmarkDynamicConfig& dynamicConfig, const fs::path& workingDirectory)
-    : scratchDirectory_(fs::path(fs::unique_path(workingDirectory / "scratch-%%%%-%%%%"))),
+    : files_(bitcodes),
+      scratchDirectory_(fs::path(fs::unique_path(workingDirectory / "scratch-%%%%-%%%%"))),
       dynamicConfigProto_(dynamicConfig),
       dynamicConfig_(realizeDynamicConfig(dynamicConfig, scratchDirectory_)),
       name_(name),
@@ -209,46 +171,43 @@ Benchmark::Benchmark(const std::string& name, const Bitcode& bitcode,
       runtimesPerObservationCount_(kDefaultRuntimesPerObservationCount),
       warmupRunsPerRuntimeObservationCount_(kDefaultWarmupRunsPerRuntimeObservationCount),
       buildtimesPerObservationCount_(kDefaultBuildtimesPerObservationCount) {
-  context_ = mlir::createMlirContext();
-
-  module_ = (makeModuleOrDie(*context_, bitcode, name));
-  auto params = parametersFromUri(name);
-  m_ = params[0];
-  n_ = params[1];
-  k_ = params[2];
-
+  for (auto& [filename, bitcode] : bitcodes) {
+    contexts_[filename] = mlir::createMlirContext();
+    modules_[filename] = makeModuleOrDie(*contexts_[filename], bitcode, name);
+  }
   sys::error_code ec;
   fs::create_directory(scratchDirectory(), ec);
   CHECK(!ec) << "Failed to create scratch directory: " << scratchDirectory();
 }
 
-Benchmark::Benchmark(const std::string& name, std::unique_ptr<mlir::MLIRContext> context,
-                     std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>> module,
-                     const BenchmarkDynamicConfig& dynamicConfig, const fs::path& workingDirectory)
-    : context_(std::move(context)),
-      module_(std::move(module)),
+Benchmark::Benchmark(
+    const std::string& name, const std::map<std::string, Bitcode>& files,
+    std::map<std::string, std::unique_ptr<mlir::MLIRContext>> contexts,
+    std::map<std::string, std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>>> modules,
+    const BenchmarkDynamicConfig& dynamicConfig, const fs::path& workingDirectory)
+    : files_(files),
+      contexts_(std::move(contexts)),
+      modules_(std::move(modules)),
       scratchDirectory_(fs::path(fs::unique_path(workingDirectory / "scratch-%%%%-%%%%"))),
       dynamicConfigProto_(dynamicConfig),
       dynamicConfig_(realizeDynamicConfig(dynamicConfig, scratchDirectory_)),
       name_(name),
       needsRecompile_(true) {
-  auto params = parametersFromUri(name);
-  m_ = params[0];
-  n_ = params[1];
-  k_ = params[2];
-
   sys::error_code ec;
   fs::create_directory(scratchDirectory(), ec);
   CHECK(!ec) << "Failed to create scratch directory: " << scratchDirectory();
 }
 
 std::unique_ptr<Benchmark> Benchmark::clone(const fs::path& workingDirectory) {
-  std::string bitcode;
-  llvm::raw_string_ostream ss(bitcode);
+  std::map<std::string, std::unique_ptr<mlir::MLIRContext>> contexts;
+  std::map<std::string, std::unique_ptr<mlir::OwningOpRef<mlir::ModuleOp>>> modules;
 
-  module()->print(ss);
-
-  return std::make_unique<Benchmark>(name(), bitcode, dynamicConfigProto_, workingDirectory);
+  for (auto& [filename, module] : modules_) {
+    contexts[filename] = mlir::createMlirContext();
+    modules[filename] = makeModuleOrDie(*contexts[filename], files_[filename], name());
+  }
+  return std::make_unique<Benchmark>(name(), files_, std::move(contexts), std::move(modules),
+                                     dynamicConfigProto_, workingDirectory);
 }
 
 Status Benchmark::verify_module() {
@@ -282,7 +241,10 @@ Status writeBitcodeFile(mlir::OwningOpRef<mlir::ModuleOp>& module, const fs::pat
 }
 
 Status Benchmark::writeBitcodeToFile(const fs::path& path) {
-  return writeBitcodeFile(module(), path);
+  for (auto& [filename, module] : modules_) {
+    RETURN_IF_ERROR(writeBitcodeFile(*module, path));
+  }
+  return Status::OK;
 }
 
 Status Benchmark::computeRuntime(Event& observation) {
@@ -311,14 +273,17 @@ Status Benchmark::computeRuntime(Event& observation) {
   // Run the binary.
   VLOG(3) << "Running " << getRuntimesPerObservationCount() << " iterations of binary";
   *observation.mutable_double_tensor()->mutable_shape()->Add() = getRuntimesPerObservationCount();
+  *observation.mutable_double_tensor()->mutable_shape()->Add() = modules_.size();
   for (int i = 0; i < getRuntimesPerObservationCount(); ++i) {
     std::string result;
     RETURN_IF_ERROR(cfg.runCommand().checkOutput(result));
     nlohmann::json result_json;
     std::stringstream result_stream(result);
     result_stream >> result_json;
-    *observation.mutable_double_tensor()->mutable_value()->Add() =
-        result_json.at("benchmarks").at(0).at("cpu_time").get<double>() / 1000000000;
+    for (int i = 0; i < modules_.size(); i++) {  // TODO(kyleherndon): verify this works
+      *observation.mutable_double_tensor()->mutable_value()->Add() =
+          result_json.at("benchmarks").at(i).at("cpu_time").get<double>() / 1000000000;
+    }
   }
 
   RETURN_IF_ERROR(cfg.runCommand().checkOutfiles());
@@ -340,6 +305,7 @@ Status Benchmark::computeBuildtime(Event& observation) {
 
   RETURN_IF_ERROR(compile());
 
+  // TODO(kyleherndon): Separate out the build times into separate values
   *observation.mutable_double_tensor()->mutable_shape()->Add() = 1;
   *observation.mutable_double_tensor()->mutable_value()->Add() =
       static_cast<double>(lastBuildTimeMicroseconds()) / 1000000;
@@ -365,35 +331,29 @@ Status Benchmark::compile() {
                   fmt::format("Failed to set working directory: {}", scratchDirectory().string()));
   }
 
-  std::string bitcode;
-  llvm::raw_string_ostream ss(bitcode);
-
-  RETURN_IF_ERROR(lowerMLIRModuleToLLVM(*module_, context_.get(), ss));
-  // return Status(StatusCode::INTERNAL, bitcode);
-
-  std::ofstream mlir_file(scratchDirectory() / "out.mlir.ll");
-  mlir_file << bitcode;
-  mlir_file.close();
-  if (!mlir_file) {
-    return Status(StatusCode::PERMISSION_DENIED,
-                  "Failed to write mlir file: " + (scratchDirectory() / "out.mlir.ll").string());
+  // TODO refactor
+  for (auto const& [filename, contents] : files_) {
+    std::ofstream file(scratchDirectory() / filename);
+    file << contents;
+    file.close();
+    if (!file) {
+      return Status(StatusCode::PERMISSION_DENIED,
+                    "Failed to write mlir file: " + (scratchDirectory() / filename).string());
+    }
   }
 
-  auto mainTemplatePath = util::getSiteDataPath("mlir-v0/benchmark_main.cc.template");
-  std::ifstream t(mainTemplatePath);
-  std::stringstream buffer;
-  buffer << t.rdbuf();
-  std::string main = buffer.str();
-  boost::replace_all(main, "${M}", std::to_string(m_));
-  boost::replace_all(main, "${N}", std::to_string(n_));
-  boost::replace_all(main, "${K}", std::to_string(k_));
-  std::ofstream main_file(scratchDirectory() / "benchmark_main.cc");
-  main_file << main;
-  main_file.close();
-  if (!main_file) {
-    return Status(
-        StatusCode::PERMISSION_DENIED,
-        "Failed to write main file: " + (scratchDirectory() / "benchmark_main.cc").string());
+  for (auto& [filename, module] : modules_) {
+    std::string bitcode;
+    llvm::raw_string_ostream ss(bitcode);
+    RETURN_IF_ERROR(lowerMLIRModuleToLLVM(*module, contexts_[filename].get(), ss));
+    std::ofstream mlir_file(scratchDirectory() / (filename + ".ll"));
+    mlir_file << bitcode;
+    mlir_file.close();
+    if (!mlir_file) {
+      return Status(
+          StatusCode::PERMISSION_DENIED,
+          "Failed to write mlir file: " + (scratchDirectory() / (filename + ".ll")).string());
+    }
   }
 
   // Check that the required sources exist.
